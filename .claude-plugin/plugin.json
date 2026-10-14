@@ -1,0 +1,12 @@
+{
+  "name": "angular-material-skill",
+  "version": "1.0.0",
+  "description": "Lineamientos de uso de componentes Angular Material (Material Design 3) para Claude Code: skill + auditor de templates + hook que revisa cada edición.",
+  "author": {
+    "name": "Patricio Manquepillan",
+    "url": "https://github.com/ptorresmanque"
+  },
+  "repository": "https://github.com/ptorresmanque/angular-material-skill",
+  "license": "MIT",
+  "keywords": ["angular", "angular-material", "material-design", "accessibility", "lint", "skill"]
+}

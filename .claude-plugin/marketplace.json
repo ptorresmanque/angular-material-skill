@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "angular-material-skill",
+  "description": "Lineamientos de Angular Material para Claude Code.",
+  "owner": {
+    "name": "Patricio Manquepillan",
+    "url": "https://github.com/ptorresmanque"
+  },
+  "plugins": [
+    {
+      "name": "angular-material-skill",
+      "description": "Obliga a elegir y usar bien cada componente de Angular Material: skill + auditor + hook.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
