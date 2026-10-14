@@ -1,3 +1,5 @@
+**Español** · [English](README.en.md)
+
 # angular-material-skill
 
 Plugin para [Claude Code](https://claude.com/claude-code) que hace que Claude elija y use correctamente cada componente de [Angular Material](https://material.angular.dev), según las guías de uso de [Material Design 3](https://m3.material.io).
