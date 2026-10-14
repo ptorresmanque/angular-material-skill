@@ -14,7 +14,8 @@ For example: Dialog only for critical decisions and Snackbar for confirmations; 
 |---|---|
 | **Skill** `angular-material-guidelines` | Activates on its own when writing, reviewing or auditing code that uses `@angular/material`. Detects the project's version (the `matButton="filled"` API only exists from v20) and applies the decision rules for each component. |
 | **Auditor** `scripts/audit.py` | Checks `.html` templates and inline templates in `.ts` files, and reports violations with file and line. Uses only the Python standard library, no dependencies. |
-| **Hook** `PostToolUse` | After every edit Claude makes, audits **only the changed lines**. If there's an ERROR, Claude has to fix it before moving on. Existing issues elsewhere in the file are not reported. It only runs in projects that depend on `@angular/material`. |
+| **Wrapper inventory** `audit.py --wrappers` | Recognizes your own UI components, directives and services (`app-button`, `app-modal`, `ToastService`…, named in English or Spanish) and third-party UI libraries (ngx-toastr, sweetalert2, ng-select…). It tells you whether each one wraps Material, reimplements something Material already provides, or has no equivalent, and how many files use it. |
+| **Hook** `PostToolUse` | After every edit Claude makes, audits **only the changed lines**. If there's an ERROR, Claude has to fix it before moving on. Existing issues elsewhere in the file are not reported. It also warns when Claude creates a component that reimplements a Material one. It only runs in projects that depend on `@angular/material`. |
 
 ## Installation
 
@@ -69,6 +70,28 @@ python3 skills/angular-material-guidelines/scripts/audit.py src --json
 
 It exits with code 1 if it finds any ERROR, so you can use it in CI.
 
+### Wrapper inventory
+
+```bash
+python3 skills/angular-material-guidelines/scripts/audit.py --wrappers src
+```
+
+```
+Reimplementa algo que Angular Material ya ofrece → candidato a reemplazar (1):
+  src/app/shared/modal/modal.component.ts:4  <app-modal>  usos: 12  → MatDialog
+Envuelve Angular Material → decide si aporta valor (1):
+  src/app/shared/button/button.component.ts:6  <app-button>  usos: 40  usa: mat-flat-button  [posible pass-through]  → matButton / matIconButton / matFab
+Librerías de UI con equivalente en Angular Material:
+  ngx-toastr → MatSnackBar
+```
+
+The output is in Spanish. Each item falls into one of three groups:
+- **REIMPLEMENTA**: doesn't use Material, but Material provides the equivalent. Candidate to replace.
+- **WRAPPER**: wraps Material. Decide whether it adds value.
+- **SIN-EQUIVALENTE**: Material has no equivalent. Keep it.
+
+The script only suggests candidates. The skill guides Claude to decide, for each one, whether to replace it, keep it (when it encapsulates real logic), or reimplement it internally with Material while keeping its API. Components nobody uses through their selector (routed pages or dialog content) aren't listed, because they aren't wrappers.
+
 ### Auditor rules
 
 | ERROR | WARN |
@@ -80,8 +103,9 @@ It exits with code 1 if it finds any ERROR, so you can use it in CI.
 | `chip-sin-contenedor`: chip outside its `mat-chip-set`/`listbox`/`grid` | `dialog-mas-de-2-acciones`: dialog with more than 2 actions |
 | `api-boton-no-disponible`: `matButton` used with Angular Material < v20 | `tooltip-no-enfocable`: tooltip on an element that can't receive focus |
 | | `boton-legacy`: legacy selector (`mat-flat-button`…) on v20+ |
+| | `reimplementa-material` (hook only, when creating a component): reimplements something Material already provides |
 
-If a WARN doesn't apply in a specific case, silence it with a comment on the line above:
+If a WARN doesn't apply in a specific case, silence it with a comment on the line above (`<!-- -->` in HTML, `//` in TS):
 
 ```html
 <!-- mat-guidelines-ignore: select-pocas-opciones — compact filter in a toolbar -->

@@ -3,6 +3,8 @@
 
 Uso:
   audit.py [rutas...] [--json]   auditoría completa (por defecto: .); exit 1 si hay ERROR
+  audit.py --wrappers [rutas...] [--json]
+                                 inventario de componentes/servicios UI propios y si Material los reemplaza
   audit.py --hook                modo hook PostToolUse (lee el evento JSON por stdin)
   audit.py --selftest            prueba rápida del propio script
 
@@ -189,6 +191,177 @@ def audit_source(path, text, major):
     return sorted(out, key=lambda f: f['line'])
 
 
+# --- Inventario de wrappers y componentes UI propios ---
+# Palabras del nombre (inglés/español; "a-b" = par consecutivo) → equivalente en Angular Material.
+# None = Material no lo cubre.
+_EQ = [
+    ('matButton / matIconButton / matFab', 'button btn boton'),
+    ('matIconButton', 'icon-button boton-icono'),
+    ('mat-icon', 'icon icono'),
+    ('mat-form-field + matInput', 'input field form-field text-field textfield campo campo-texto entrada'),
+    ('mat-form-field + textarea matInput (cdkTextareaAutosize)', 'textarea'),
+    ('mat-select', 'select combobox combo selector'),
+    ('mat-select (si guarda un valor) o mat-menu (si son acciones)', 'dropdown desplegable'),
+    ('mat-autocomplete', 'autocomplete typeahead autocompletar'),
+    ('mat-checkbox', 'checkbox casilla'),
+    ('mat-radio-group', 'radio radio-group'),
+    ('mat-slide-toggle (on/off) o mat-button-toggle-group (opciones opuestas)', 'toggle switch interruptor'),
+    ('mat-button-toggle-group', 'segmented'),
+    ('mat-slider', 'slider range deslizador'),
+    ('mat-datepicker / mat-date-range-input',
+     'datepicker date-picker date-input date-range calendar calendario selector-fecha'),
+    ('mat-timepicker (v19.1+)', 'timepicker time-picker time-input selector-hora'),
+    ('MatDialog', 'modal dialog popup confirm dialogo confirmacion'),
+    ('MatBottomSheet', 'bottom-sheet bottomsheet action-sheet'),
+    ('MatSnackBar', 'toast toaster snackbar snack-bar notification notifications notify notificacion'),
+    ('MatSnackBar si es temporal; un aviso fijo en la página no tiene equivalente', 'alert alerta aviso'),
+    ('matTooltip', 'tooltip'),
+    ('mat-menu (acciones) o CDK Overlay (contenido interactivo)', 'popover'),
+    ('mat-menu', 'menu context-menu'),
+    ('mat-tab-group / mat-tab-nav-bar', 'tabs tab tabset pestanas pestana'),
+    ('mat-expansion-panel / mat-accordion',
+     'accordion collapse collapsible expansion expandable acordeon colapsable'),
+    ('mat-stepper', 'stepper wizard steps asistente pasos'),
+    ('mat-table + matSort + mat-paginator', 'table datatable data-table tabla'),
+    ('mat-table (datos) o mat-grid-list (mosaicos)', 'grid'),
+    ('mat-paginator', 'paginator pagination pager paginacion paginador'),
+    ('mat-list-item', 'list-item'),
+    ('mat-card', 'card tarjeta'),
+    ('mat-chip', 'chip chips tag tags pill etiqueta'),
+    ('matBadge', 'badge insignia'),
+    ('mat-progress-spinner / mat-progress-bar', 'spinner loader loading cargando cargador'),
+    ('mat-progress-bar', 'progress progress-bar progreso barra-progreso'),
+    ('mat-sidenav / mat-drawer', 'sidebar sidenav drawer side-menu offcanvas barra-lateral'),
+    ('mat-toolbar', 'navbar topbar toolbar appbar header encabezado cabecera barra-superior'),
+    ('mat-divider', 'divider separator separador divisor'),
+    ('mat-tree', 'tree arbol'),
+    (None, 'avatar breadcrumb breadcrumbs migas skeleton carousel carrusel rating stars estrellas '
+           'upload uploader dropzone file-upload subir-archivo'),
+]
+EQUIV = {w: eq for eq, words in _EQ for w in words.split()}
+OVERLAYS = ('MatDialog', 'MatSnackBar', 'MatBottomSheet')  # únicos equivalentes que un servicio puede reimplementar
+SAME_KIT = 'el componente Material equivalente de cada módulo usado (dos kits de UI rompen la consistencia)'
+LIBS = {
+    'ngx-toastr': 'MatSnackBar',
+    'sweetalert2': 'MatDialog (confirmaciones) / MatSnackBar (avisos)',
+    '@sweetalert2/ngx-sweetalert2': 'MatDialog (confirmaciones) / MatSnackBar (avisos)',
+    'ngx-smart-modal': 'MatDialog',
+    'ngx-spinner': 'mat-progress-spinner / mat-progress-bar',
+    'ngx-pagination': 'mat-paginator',
+    '@ng-select/ng-select': 'mat-select / mat-autocomplete',
+    'ngx-material-timepicker': 'mat-timepicker (v19.1+)',
+    'ngx-bootstrap': SAME_KIT, '@ng-bootstrap/ng-bootstrap': SAME_KIT, 'primeng': SAME_KIT, 'ng-zorro-antd': SAME_KIT,
+}
+DECORATOR = re.compile(r'@(Component|Directive|Injectable)\s*\(([\s\S]*?)\)\s*'
+                       r'(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+(\w+)')
+CREATES_DOM = re.compile(r'document\.|Renderer2|createComponent|ViewContainerRef|appendChild|ApplicationRef')
+
+
+def _equiv(name):
+    """'app-confirm-dialog' / '[appTooltip]' / 'ToastService' → (palabra, equivalente) o None."""
+    first = re.split(r'[,\s]', name.strip())[0]
+    tokens = [t.lower() for t in re.findall(r'[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])', first)]
+    for i in range(len(tokens) - 1, -1, -1):  # desde el final: el núcleo del nombre suele ir al final
+        for key in (f'{tokens[i - 1]}-{tokens[i]}' if i else None, tokens[i]):
+            if key in EQUIV:
+                return key, EQUIV[key]
+    return None
+
+
+def ui_components(path, text):
+    """Componentes, directivas y servicios propios cuyo nombre corresponde a una pieza de UI."""
+    matches = list(DECORATOR.finditer(text))
+    file_material = {'material/' + x for x in re.findall(r"@angular/material/([\w-]+)", text)}
+    out = []
+    for n, m in enumerate(matches):
+        kind, body, cls = m.groups()
+        sel = re.search(r"selector\s*:\s*['\"`]([^'\"`]+)", body)
+        hit = _equiv(sel.group(1) if sel else cls)
+        if not hit:
+            continue
+        tpl = ''
+        t = re.search(r'template\s*:\s*`([\s\S]*?)`', body)
+        u = re.search(r"templateUrl\s*:\s*['\"`]([^'\"`]+)", body)
+        if t:
+            tpl = t.group(1)
+        elif u and (path.parent / u.group(1)).is_file():
+            tpl = read(path.parent / u.group(1))
+        material = sorted(set(re.findall(r'<(mat-[a-z-]+)', tpl))
+                          | set(re.findall(r'[\s\[](mat[A-Z]\w*|mat-[a-z-]+)', tpl)) | file_material)
+        if kind == 'Injectable':
+            src = text[m.start():matches[n + 1].start() if n + 1 < len(matches) else len(text)]
+            if not (hit[1] or '').startswith(OVERLAYS) or not (material or CREATES_DOM.search(src)):
+                continue  # servicio de estado/datos, no de UI
+        first = re.split(r'[,\s]', sel.group(1).strip())[0] if sel else ''
+        out.append({
+            'nombre': cls if not sel else first if '[' in first else f'<{first}>',
+            'tipo': 'SIN-EQUIVALENTE' if hit[1] is None else 'WRAPPER' if material else 'REIMPLEMENTA',
+            'equivalente': hit[1], 'material': material, 'clase': cls, 'selector': first,
+            'delgado': bool(material and tpl and len(re.findall(r'<[a-z][\w-]*', tpl)) <= 3),
+            'line': text.count('\n', 0, m.start()) + 1,
+        })
+    return out
+
+
+def _use_pattern(item):
+    sel = item['selector']
+    if not sel:
+        return rf"\b{item['clase']}\b"
+    attr = re.search(r'\[([\w-]+)', sel)
+    if attr:
+        return rf'[\s\[]{re.escape(attr.group(1))}[\s\]=>/]'
+    return rf'<{re.escape(sel)}[\s>/]'
+
+
+def inventory(root):
+    files = [(os.path.relpath(f), read(f)) for f in iter_files(root)]
+    items = []
+    for rel, text in files:
+        if rel.endswith('.ts'):
+            items += [dict(x, file=rel) for x in ui_components(Path(rel), text)]
+    for it in items:  # usos = archivos que lo usan
+        pat = re.compile(_use_pattern(it))
+        it['usos'] = sum(1 for rel, text in files if rel != it['file'] and pat.search(text))
+    # Un wrapper se coloca por selector en templates. Sin usos por selector es una página (ruta),
+    # el contenido de un MatDialog/MatBottomSheet o código muerto: no es un wrapper.
+    no_wrappers = sum(1 for it in items if it['selector'] and not it['usos'])
+    items = [it for it in items if not it['selector'] or it['usos']]
+    libs = {}
+    for d in [root if root.is_dir() else root.parent, *root.parents]:
+        pkg = d / 'package.json'
+        if pkg.is_file():
+            data = json.loads(read(pkg))
+            deps = {**data.get('dependencies', {}), **data.get('devDependencies', {})}
+            libs = {lib: eq for lib, eq in LIBS.items() if lib in deps}
+            break
+    return items, libs, no_wrappers
+
+
+def print_inventory(items, libs, no_wrappers):
+    groups = [('REIMPLEMENTA', 'Reimplementa algo que Angular Material ya ofrece → candidato a reemplazar'),
+              ('WRAPPER', 'Envuelve Angular Material → decide si aporta valor'),
+              ('SIN-EQUIVALENTE', 'Sin equivalente en Angular Material → mantener')]
+    for tipo, title in groups:
+        group = sorted((i for i in items if i['tipo'] == tipo), key=lambda i: -i['usos'])
+        if group:
+            print(f'{title} ({len(group)}):')
+        for i in group:
+            mats = i['material']
+            extra = f"  usa: {', '.join(mats[:6])}{' …' if len(mats) > 6 else ''}" if mats else ''
+            extra += '  [posible pass-through]' if i['delgado'] else ''
+            extra += f"  → {i['equivalente']}" if i['equivalente'] else ''
+            print(f"  {i['file']}:{i['line']}  {i['nombre']}  usos: {i['usos']}{extra}")
+    if libs:
+        print('Librerías de UI con equivalente en Angular Material:')
+        for lib, eq in libs.items():
+            print(f'  {lib} → {eq}')
+    if not items and not libs:
+        print('Sin componentes UI propios reconocibles por nombre.')
+    if no_wrappers:
+        print(f'({no_wrappers} componente(s) con nombre de UI no se usan por selector: páginas, contenido de '
+              'diálogos o código muerto; no son wrappers.)')
+
+
 def material_version(start):
     """(usa_material, major|None) buscando hacia arriba node_modules y package.json."""
     for d in [start, *start.parents]:
@@ -249,12 +422,21 @@ def hook(event):
     ranges = edited_ranges(ti, text)
     hits = [f for f in audit_source(path, text, major)
             if any(s <= hi and e >= lo for s, e in f['spans'] for lo, hi in ranges)]
+    if 'content' in ti and path.suffix == '.ts':  # componente nuevo (o reescrito) que reimplementa Material
+        lines = text.splitlines()
+        for it in ui_components(path, text):
+            f = {'line': it['line'], 'spans': [(it['line'], it['line'])], 'sev': 'WARN', 'rule': 'reimplementa-material',
+                 'msg': f"{it['nombre']} parece reimplementar {it['equivalente']}: usa el componente de Angular "
+                        'Material (o un wrapper existente del proyecto) salvo que no cubra un requisito real. '
+                        'Si es una página o un componente de feature (no una pieza de UI reutilizable), ignora el aviso.'}
+            if it['tipo'] == 'REIMPLEMENTA' and not ignored(lines, f):
+                hits.append(f)
     if not hits:
         return
     body = '\n'.join(f"- L{f['line']} {f['sev']} {f['rule']}: {f['msg']}" for f in hits)
     msg = (f'mat-guidelines (skill angular-material-guidelines) en {path}:\n{body}\n'
            'Corrige los ERROR. En las WARN corrige o, si la regla no aplica aquí, agrega en la línea anterior '
-           '`<!-- mat-guidelines-ignore: <regla> — motivo -->`.')
+           '`mat-guidelines-ignore: <regla> — motivo` como comentario (`<!-- -->` en HTML, `//` en TS).')
     if any(f['sev'] == 'ERROR' for f in hits):
         out = {'decision': 'block', 'reason': msg}
     else:
@@ -292,6 +474,47 @@ def selftest():
     ts = 'import x;\n@Component({\n  template: `\n    <button matIconButton></button>`\n})'
     assert [f['line'] for f in audit_source(Path('c.ts'), ts, 20)] == [4]
     assert edited_ranges({'new_string': '<b>\n</b>'}, 'a\n<b>\n</b>\nc') == [(2, 3)]
+    comps = '''
+@Component({ selector: 'app-modal', template: `<div class="backdrop"><ng-content /></div>` })
+export class ModalComponent {}
+@Component({ selector: 'app-button', template: `<button mat-flat-button><ng-content /></button>` })
+export class ButtonComponent {}
+@Component({ selector: 'app-tabla-productos', template: `<table><tr><td>x</td></tr></table>` })
+export class TablaProductosComponent {}
+@Component({ selector: 'app-user-avatar', template: `<img [src]="url">` })
+export class UserAvatarComponent {}
+@Component({ selector: 'app-product-page', template: `<mat-card></mat-card>` })
+export class ProductPageComponent {}
+@Directive({ selector: '[appTooltip]' })
+export class TooltipDirective {}
+@Injectable({ providedIn: 'root' })
+export class ToastService { show() { document.body.appendChild(el); } }
+@Injectable({ providedIn: 'root' })
+export class MenuService { items = []; }
+'''
+    got = {i['nombre']: (i['tipo'], i['equivalente'], i['delgado']) for i in ui_components(Path('x.ts'), comps)}
+    assert got == {'<app-modal>': ('REIMPLEMENTA', 'MatDialog', False),
+                   '<app-button>': ('WRAPPER', 'matButton / matIconButton / matFab', True),
+                   '<app-tabla-productos>': ('REIMPLEMENTA', 'mat-table + matSort + mat-paginator', False),
+                   '<app-user-avatar>': ('SIN-EQUIVALENTE', None, False),
+                   '[appTooltip]': ('REIMPLEMENTA', 'matTooltip', False),
+                   'ToastService': ('REIMPLEMENTA', 'MatSnackBar', False)}, got
+    assert re.search(_use_pattern({'selector': '[appTooltip]'}), '<span appTooltip="x">')
+    assert re.search(_use_pattern({'selector': 'app-button'}), '<app-button>Hola</app-button>')
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / 'package.json').write_text('{"dependencies": {"@angular/material": "^21.0.0", "ngx-toastr": "^19"}}')
+        (root / 'ui.ts').write_text(comps)
+        (root / 'page.html').write_text('<app-modal></app-modal><app-button>Ok</app-button>')
+        cwd = os.getcwd()
+        os.chdir(tmp)
+        try:
+            items, libs, no_wrappers = inventory(root)
+        finally:
+            os.chdir(cwd)
+        assert {i['nombre']: i['usos'] for i in items} == {'<app-modal>': 1, '<app-button>': 1, 'ToastService': 0}, items
+        assert no_wrappers == 3 and libs == {'ngx-toastr': 'MatSnackBar'}, (no_wrappers, libs)
     print('selftest OK')
 
 
@@ -306,6 +529,15 @@ def main(argv):
             pass
         return 0
     paths = [a for a in argv if not a.startswith('--')] or ['.']
+    if '--wrappers' in argv:
+        for p in paths:
+            items, libs, no_wrappers = inventory(Path(p).resolve())
+            if '--json' in argv:
+                print(json.dumps({'componentes': items, 'librerias': libs, 'no_wrappers': no_wrappers},
+                                 ensure_ascii=False, indent=2))
+            else:
+                print_inventory(items, libs, no_wrappers)
+        return 0
     results, majors = [], set()
     for p in paths:
         root = Path(p).resolve()
