@@ -23,7 +23,8 @@ Estos lineamientos existen para que todas las pantallas comuniquen igual: una so
 
    En v20+ los selectores legados siguen funcionando. No migres masivamente código existente salvo que te lo pidan; el código nuevo sí va con la API nueva. En < v20, `matButton="..."` no da error, pero queda **sin estilo**, así que nunca la uses ahí.
 2. **Respeta las convenciones del proyecto.** Mira si hay `MAT_FORM_FIELD_DEFAULT_OPTIONS` (appearance `fill` u `outline`) y síguelos para que la app sea consistente. Antes de crear una pieza de UI, ejecuta el inventario de wrappers (sección 5): si el proyecto ya tiene un wrapper que aporta valor, úsalo.
-3. **Elige el componente** con las reglas de la sección 2. Si tienes dudas sobre un componente específico, lee `references/componentes.md`, que tiene la tabla completa con cuándo usarlo y cuándo evitarlo.
+3. **Elige el componente** con las reglas de la sección 2. Para comparar componentes parecidos, usa `references/decisiones.md`.
+4. **Antes de usar o revisar un componente, lee su archivo** en `references/componentes/<componente>.md` (índice al final de la sección 2). Cada archivo trae: cuándo usarlo, cuándo no (y qué usar en su lugar), API clave, reglas, accesibilidad y un ejemplo correcto. Las reglas marcadas `[auditor: id]` las verifica el script.
 
 ## 2. Reglas de decisión
 
@@ -35,7 +36,7 @@ Estos lineamientos existen para que todas las pantallas comuniquen igual: una so
 - Para mostrar por qué un botón está deshabilitado, usa `disabledInteractive` + tooltip. Para acciones lentas, `showProgress`.
 
 ### Mensajes y overlays (elige según la importancia del mensaje)
-- **Snackbar**: confirmación de importancia baja o media ("Guardado", "Eliminado · Deshacer"). Máximo una acción. No sirve para errores críticos.
+- **Snackbar**: confirmación de importancia baja o media ("Guardado", "Eliminado · Deshacer"). Máximo una acción y, si la tiene, sin `duration` (quien usa lector de pantalla necesita tiempo para llegar a ella). No sirve para errores críticos.
 - **Dialog**: información crítica o una decisión que bloquea el flujo (confirmar una eliminación, un formulario corto). Máximo 2 acciones: confirmar (la más cercana al borde) y descartar. El título debe ser una pregunta concreta, no "¿Está seguro?". No uses Dialog para información de baja prioridad.
 - **Bottom Sheet**: acciones contextuales en **móvil** (compartir, opciones de archivo). En escritorio prefiere Menu o Dialog.
 - **Menu**: lista de **acciones** o navegación que sale de un botón. Si el valor elegido debe quedar guardado, usa Select.
@@ -44,7 +45,8 @@ Estos lineamientos existen para que todas las pantallas comuniquen igual: una so
 ### Formularios y selección
 - Todo `matInput`, `mat-select`, `mat-chip-grid` o `mat-date-range-input` va dentro de `<mat-form-field>` con `<mat-label>`, y con `<mat-error>` cuando tiene validaciones.
 - Pocas opciones a la vista (≤ 5) → `mat-radio-group`. Si son opuestas y compactas (lista/cuadrícula, día/semana/mes) → `mat-button-toggle-group`.
-- Muchas opciones → `mat-select`. Muchísimas, o hay que buscar o escribir libre → `mat-autocomplete`.
+- Muchas opciones → select. La documentación prefiere el nativo `<select matNativeControl>` cuando las opciones son texto simple. Usa `mat-select` para `multiple`, grupos u opciones con formato. Si son muchísimas, o hay que buscar o escribir libre → `mat-autocomplete`.
+- Todo campo lleva `mat-label`; el `placeholder` no es un label.
 - Se aplica **al instante** → `mat-slide-toggle`. Se aplica **al guardar** el form, o hay selección múltiple → `mat-checkbox` (`indeterminate` para "seleccionar todo").
 - Un valor exacto → input. Un valor aproximado en un rango → `mat-slider`.
 - Fecha → Datepicker (rangos con `mat-date-range-input`). Hora → Timepicker. Fecha y hora → ambos.
@@ -69,11 +71,30 @@ Estos lineamientos existen para que todas las pantallas comuniquen igual: una so
 - **Jerarquía** → `mat-tree`.
 
 ### Indicadores
-- **Progress bar**: progreso con % conocido (`determinate`), o carga de una vista completa (`indeterminate` arriba).
+- **Cuánto esperar antes de mostrar un indicador (M3):**
+  - Menos de 200 ms: nada.
+  - Entre 200 ms y 5 s: indicador de carga (indeterminate).
+  - Más de 5 s: indicador de progreso (determinate).
+  - Un solo indicador por grupo de elementos que cargan.
+- **Progress bar**: progreso con % conocido, o carga de una vista completa (`indeterminate` en el borde superior).
 - **Spinner**: cargas en espacios compactos (dentro de un botón, card o panel).
-- **Badge**: contadores pequeños sobre otro elemento.
+- Progress bar y spinner siempre llevan `aria-label`.
+- **Badge**: contadores de hasta 4 caracteres sobre otro elemento, siempre con `matBadgeDescription`.
 - **Divider**: solo cuando el espacio en blanco no alcanza para separar.
-- **mat-icon**: si es decorativo, `aria-hidden="true"`; si es lo único que comunica, lleva label.
+- **mat-icon**: es decorativo por defecto. Si comunica algo, lleva texto oculto. Si es interactivo, va dentro de un `<button>`/`<a>` con label, nunca con `(click)` en el ícono.
+
+### Lineamientos completos por componente
+Cada componente del catálogo tiene su archivo en `references/componentes/`. Léelo antes de usar o revisar ese componente.
+
+| Grupo | Archivos |
+|---|---|
+| Acciones | `button.md`, `button-toggle.md` |
+| Formularios | `form-field.md`, `input.md`, `select.md`, `autocomplete.md`, `datepicker.md`, `timepicker.md`, `slider.md` |
+| Selección | `checkbox.md`, `radio.md`, `slide-toggle.md`, `chips.md` |
+| Mensajes y overlays | `dialog.md`, `snack-bar.md`, `bottom-sheet.md`, `menu.md`, `tooltip.md` |
+| Navegación y estructura | `toolbar.md`, `sidenav.md`, `tabs.md`, `stepper.md`, `expansion.md` |
+| Datos | `table.md`, `sort.md`, `paginator.md`, `list.md`, `card.md`, `grid-list.md`, `tree.md` |
+| Indicadores y utilidades | `progress-bar.md`, `progress-spinner.md`, `badge.md`, `icon.md`, `divider.md`, `ripple.md`, `core.md` |
 
 ## 3. Verificación (obligatoria al terminar)
 
@@ -85,7 +106,18 @@ python3 <directorio-de-esta-skill>/scripts/audit.py <archivos-o-carpetas>
 
 - Corrige siempre los **ERROR**.
 - Las **WARN** son heurísticas: corrígelas o, si en este caso la regla no aplica, deja en la línea anterior un comentario con justificación: `<!-- mat-guidelines-ignore: regla-id — motivo -->` (en un `.ts` con template inline, dentro del template).
-- Hay reglas que el script no puede ver. Repásalas tú: Dialog vs Snackbar en el `.ts`, información esencial escondida en tooltips, Tabs usadas como pasos, abuso de cards, Grid List usada como layout.
+- El script también verifica las exigencias de accesibilidad de la documentación de cada componente:
+  - Labels obligatorios en tablas, paginadores, progress, listas, chips, tabs, grupos, steppers y sliders.
+  - `matBadgeDescription` en los badges y `sortActionDescription` en los encabezados ordenables.
+  - Toggle, confirmación y formato en el datepicker.
+  - Controles interactivos anidados.
+  - Íconos clicables y listas multilínea sin `matListItemTitle`.
+- Hay reglas que el script no puede ver. Repásalas tú con el archivo del componente:
+  - Dialog vs Snackbar, y snackbars con acción y `duration`, en el `.ts`.
+  - Información esencial escondida en tooltips.
+  - Tabs usadas como pasos.
+  - Abuso de cards y Grid List usada como layout.
+  - La jerarquía de botones dentro de una card o toolbar.
 
 Si la skill se instaló como plugin (o se configuró el hook a mano), un **hook PostToolUse** en Edit/Write ejecuta esta auditoría sobre las líneas que editas en proyectos con `@angular/material`. También avisa (`reimplementa-material`) cuando creas un componente cuyo nombre corresponde a algo que Material ya trae. Cuando te devuelva hallazgos, resuélvelos antes de seguir.
 
@@ -110,7 +142,7 @@ Muchos proyectos tienen componentes propios que envuelven Material (`<app-button
 - **WRAPPER**: envuelve Material. Decide si aporta valor con los criterios de abajo.
 - **SIN-EQUIVALENTE**: avatar, breadcrumb, skeleton, carrusel, rating, subida de archivos. Se mantiene.
 
-También lista las librerías de UI de terceros que tienen equivalente en Material (ngx-toastr, sweetalert2, ng-select, ngx-bootstrap, primeng…). El script decide solo por el nombre, así que **lee el código de cada candidato antes de concluir**. La marca `[posible pass-through]` solo indica que el template es chico. Un componente chico que encapsula estado o lógica, como un overlay de carga global conectado a un servicio, sí aporta valor.
+También lista las librerías de UI de terceros que tienen equivalente en Material (ngx-toastr, sweetalert2, ng-select, ngx-bootstrap, primeng…). Las tablas de equivalencias, lo que no tiene equivalente y la configuración global que reemplaza wrappers están en `references/wrappers.md`. El script decide solo por el nombre, así que **lee el código de cada candidato antes de concluir**. La marca `[posible pass-through]` solo indica que el template es chico. Un componente chico que encapsula estado o lógica, como un overlay de carga global conectado a un servicio, sí aporta valor.
 
 **Un wrapper aporta valor (mantener) si:**
 - Encapsula lógica repetida real, por ejemplo:

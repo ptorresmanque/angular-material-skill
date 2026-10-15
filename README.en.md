@@ -12,7 +12,7 @@ For example: Dialog only for critical decisions and Snackbar for confirmations; 
 
 | Piece | What it does |
 |---|---|
-| **Skill** `angular-material-guidelines` | Activates on its own when writing, reviewing or auditing code that uses `@angular/material`. Detects the project's version (the `matButton="filled"` API only exists from v20) and applies the decision rules for each component. |
+| **Skill** `angular-material-guidelines` | Activates on its own when writing, reviewing or auditing code that uses `@angular/material`. Detects the project's version (the `matButton="filled"` API only exists from v20) and applies the decision rules. Includes **full guidelines for all 37 components** in the catalog: when to use it, when not to (and what to use instead), key API, rules, accessibility and a correct example. |
 | **Auditor** `scripts/audit.py` | Checks `.html` templates and inline templates in `.ts` files, and reports violations with file and line. Uses only the Python standard library, no dependencies. |
 | **Wrapper inventory** `audit.py --wrappers` | Recognizes your own UI components, directives and services (`app-button`, `app-modal`, `ToastService`…, named in English or Spanish) and third-party UI libraries (ngx-toastr, sweetalert2, ng-select…). It tells you whether each one wraps Material, reimplements something Material already provides, or has no equivalent, and how many files use it. |
 | **Hook** `PostToolUse` | After every edit Claude makes, audits **only the changed lines**. If there's an ERROR, Claude has to fix it before moving on. Existing issues elsewhere in the file are not reported. It also warns when Claude creates a component that reimplements a Material one. It only runs in projects that depend on `@angular/material`. |
@@ -94,16 +94,39 @@ The script only suggests candidates. The skill guides Claude to decide, for each
 
 ### Auditor rules
 
-| ERROR | WARN |
+**ERROR**: required by the Angular Material docs ("must", "always").
+
+| Rule | Detects |
 |---|---|
-| `icon-button-sin-label`: icon-only button without `aria-label` | `multiples-filled`: more than one `filled` button in the same section |
-| `button-navega`: `<button routerLink>` (navigation needs an `<a>`) | `multiples-fab`: more than one FAB on the screen |
-| `a-sin-destino`: button-styled `<a>` with no `href`/`routerLink` | `select-pocas-opciones`: `mat-select` with ≤ 5 fixed options |
-| `control-sin-form-field`: input, select or chip-grid outside `mat-form-field` | `slide-toggle-en-form-con-submit`: switch inside a form that gets submitted |
-| `chip-sin-contenedor`: chip outside its `mat-chip-set`/`listbox`/`grid` | `dialog-mas-de-2-acciones`: dialog with more than 2 actions |
-| `api-boton-no-disponible`: `matButton` used with Angular Material < v20 | `tooltip-no-enfocable`: tooltip on an element that can't receive focus |
-| | `boton-legacy`: legacy selector (`mat-flat-button`…) on v20+ |
-| | `reimplementa-material` (hook only, when creating a component): reimplements something Material already provides |
+| `icon-button-sin-label` | Icon-only button without `aria-label` |
+| `button-navega` / `a-sin-destino` | `<button routerLink>` instead of `<a>`, or a button-styled `<a>` with no destination |
+| `api-boton-no-disponible` | `matButton` API used with Angular Material < v20 |
+| `control-sin-form-field` / `campo-sin-label` | Control outside `mat-form-field`, or a field without `mat-label` |
+| `progress-sin-label` · `paginator-sin-label` · `tabla-sin-label` · `lista-sin-label` · `chips-sin-label` · `tab-nav-sin-label` | Progress indicator, paginator, table, `mat-nav-list`/`mat-selection-list`, chip listbox/grid or `<nav mat-tab-nav-bar>` without `aria-label` |
+| `badge-sin-descripcion` | `matBadge` without `matBadgeDescription` |
+| `sort-sin-descripcion` | `mat-sort-header` without `sortActionDescription` |
+| `chip-sin-contenedor` / `chip-remove-en-icono` | Chip outside its container, or `matChipRemove` not on a `<button>` |
+| `icono-clicable` | `mat-icon` with `(click)` |
+| `lista-multilinea-sin-titulo` | Item with `matListItemLine` but no `matListItemTitle` |
+| `datepicker-sin-toggle` / `datepicker-sin-confirmacion` | Datepicker without `mat-datepicker-toggle` or without `mat-datepicker-actions` |
+
+**WARN**: recommended by the docs ("should", "avoid"), or a heuristic rule.
+
+| Rule | Detects |
+|---|---|
+| `multiples-filled` / `multiples-fab` | More than one `filled` button in the same section, or more than one FAB |
+| `select-pocas-opciones` | `mat-select` with ≤ 5 fixed options |
+| `slide-toggle-en-form-con-submit` | Switch inside a form that gets submitted |
+| `dialog-mas-de-2-acciones` | Dialog with more than 2 actions |
+| `tooltip-no-enfocable` / `click-sin-teclado` | Tooltip or `(click)` on an element that can't receive focus (`span`, `mat-card`, `mat-chip`…) |
+| `grupo-sin-label` · `stepper-sin-label` · `slider-sin-label` | Radio/button-toggle group, stepper or slider thumb without a label |
+| `control-anidado` | Interactive control inside `mat-option`, `mat-list-option`, `mat-chip-option`, an expansion panel header, a checkbox, radio or switch, a `mat-menu` without `mat-menu-item`, or inside another button or link |
+| `menu-trigger-no-boton` | `matMenuTriggerFor` on something that isn't a button |
+| `lista-interactiva` | Clickable `mat-list-item` inside a plain `mat-list` |
+| `tree-control-legacy` | `mat-tree` with `treeControl` |
+| `datepicker-sin-formato` | Date field without a `mat-hint` showing the format |
+| `boton-legacy` | Legacy selector (`mat-flat-button`…) on v20+ |
+| `reimplementa-material` | Hook only, when creating a component: reimplements something Material already provides |
 
 If a WARN doesn't apply in a specific case, silence it with a comment on the line above (`<!-- -->` in HTML, `//` in TS):
 
@@ -119,9 +142,12 @@ Some decisions can't be detected statically: using a Dialog where a Snackbar wou
 .claude-plugin/          plugin and marketplace manifests
 hooks/hooks.json         PostToolUse hook
 skills/angular-material-guidelines/
-├── SKILL.md             decision rules (core)
-├── references/componentes.md   full per-component table
-└── scripts/audit.py     auditor (python3 audit.py --selftest)
+├── SKILL.md                  decision rules (core) and index
+├── references/
+│   ├── componentes/*.md      guidelines for each of the 37 components
+│   ├── decisiones.md         tables for choosing between similar components
+│   └── wrappers.md           equivalences for custom components and libraries
+└── scripts/audit.py          auditor (python3 audit.py --selftest)
 ```
 
 ## Sources

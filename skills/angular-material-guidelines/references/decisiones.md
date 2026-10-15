@@ -1,8 +1,8 @@
-# Referencia por componente
+# Decisiones entre componentes
 
-Cuándo usar y cuándo evitar cada componente de material.angular.dev. Los umbrales numéricos ("≤ 5 opciones", "> 15") son reglas prácticas de UX, no valores oficiales.
+Tablas para elegir entre componentes parecidos. Los lineamientos detallados de cada componente están en `componentes/<componente>.md`. Los umbrales numéricos ("≤ 5 opciones", "> 15") son reglas prácticas de UX, no valores oficiales.
 
-Contenido: [Acciones](#acciones) · [Formularios](#formularios) · [Selección](#selección) · [Mensajes y overlays](#mensajes-y-overlays) · [Navegación](#navegación-y-estructura) · [Datos](#mostrar-datos) · [Indicadores](#indicadores-y-utilidades) · [Wrappers y equivalencias](#wrappers-y-equivalencias)
+Contenido: [Acciones](#acciones) · [Formularios](#formularios) · [Selección](#selección) · [Mensajes y overlays](#mensajes-y-overlays) · [Navegación](#navegación-y-estructura) · [Datos](#mostrar-datos) · [Indicadores](#indicadores-y-utilidades)
 
 ## Acciones
 
@@ -36,7 +36,7 @@ Contenido: [Acciones](#acciones) · [Formularios](#formularios) · [Selección](
 | Checkbox | Hay selección múltiple, o es un booleano que se aplica al enviar ("Acepto los términos"). `indeterminate` para un "Seleccionar todo". | El cambio debe aplicarse al instante: usa Slide Toggle. |
 | Radio Button | Se elige una opción entre ≤ 5–7 y conviene verlas todas para comparar. | Son muchas: usa Select. |
 | Slide Toggle | Es un on/off que se aplica de inmediato, sin botón Guardar (preferencias). | Requiere guardar, o las opciones son opuestas. |
-| Select | Se elige una opción entre muchas con poco espacio. Admite `multiple`. | Son ≤ 5 opciones (Radio) o muchísimas con búsqueda (Autocomplete). |
+| Select | Se elige una opción entre muchas con poco espacio. Si no necesitas opciones con contenido enriquecido, usa `<select matNativeControl>` (la documentación lo prefiere por accesibilidad y móvil); `mat-select` para `multiple`, grupos u opciones personalizadas. | Son ≤ 5 opciones (Radio) o muchísimas con búsqueda (Autocomplete). |
 | Chips: `mat-chip-set` | Solo se muestran etiquetas (tags). | — |
 | Chips: `mat-chip-listbox` | Son filtros o selección ("Talla: S M L"). Agrega `multiple` para filtros acumulables. | — |
 | Chips: `mat-chip-grid` | El usuario ingresa varios valores (destinatarios, keywords), con autocomplete si conviene. | — |
@@ -47,7 +47,7 @@ La importancia del mensaje decide el componente.
 
 | Componente | Úsalo cuando… | Evítalo cuando… |
 |---|---|---|
-| Snackbar | Es una confirmación de importancia baja o media que puede desaparecer sola. Máximo una acción ("Deshacer"). | El error es crítico y el usuario debe leerlo. |
+| Snackbar | Es una confirmación de importancia baja o media. Máximo una acción ("Deshacer"); si tiene acción, sin `duration` (el lector de pantalla necesita tiempo para llegar a ella). | El error es crítico y el usuario debe leerlo. |
 | Dialog | Es información crítica o una decisión que bloquea el flujo. Máximo 2 acciones. En móvil, una tarea de varios pasos puede ir en un diálogo a pantalla completa. | La información es de baja prioridad (Snackbar) o solo hay que elegir opciones (Menu). |
 | Bottom Sheet | Hay acciones contextuales en móvil (compartir, opciones de archivo). | Estás en escritorio: usa Menu o Dialog. |
 | Menu | Hay acciones o navegación que salen de un botón (el ⋮ de una fila, el menú de usuario). Admite submenús. | El valor elegido debe quedar guardado en un form: usa Select. |
@@ -86,57 +86,3 @@ La importancia del mensaje decide el componente.
 | Divider | Separas grupos en listas o menús y el espacio en blanco no alcanza. |
 | Ripples (`matRipple`) | Quieres feedback táctil en elementos clicables propios (los componentes Material ya lo traen). |
 | Core | No se usa directamente: contiene `mat-option`, los adaptadores de fecha y el theming. |
-
-## Wrappers y equivalencias
-
-### Qué reemplaza Material
-
-| Componente propio o librería | Equivalente en Angular Material |
-|---|---|
-| Modal, popup, confirmación; `ngx-smart-modal`; `sweetalert2` (confirmaciones) | `MatDialog` |
-| Toast, notificación temporal; `ngx-toastr`; `sweetalert2` (avisos) | `MatSnackBar` |
-| Action sheet (móvil) | `MatBottomSheet` |
-| Dropdown que guarda un valor; `@ng-select/ng-select` | `mat-select`, o `mat-autocomplete` si hay búsqueda |
-| Dropdown de acciones, menú contextual | `mat-menu` |
-| Tooltip | `matTooltip` |
-| Popover con contenido interactivo | `mat-menu` si son acciones; si no, CDK Overlay |
-| Tabs | `mat-tab-group` o `mat-tab-nav-bar` |
-| Acordeón, colapsable | `mat-expansion-panel` / `mat-accordion` |
-| Wizard, pasos | `mat-stepper` |
-| Tabla con orden y paginación; `ngx-pagination` | `mat-table` + `matSort` + `mat-paginator` |
-| Spinner, loader; `ngx-spinner` | `mat-progress-spinner` / `mat-progress-bar` |
-| Datepicker, calendario para elegir fecha | `mat-datepicker` / `mat-date-range-input` |
-| Timepicker; `ngx-material-timepicker` | `mat-timepicker` (v19.1+) |
-| Switch, toggle | `mat-slide-toggle`, o `mat-button-toggle-group` si las opciones son opuestas |
-| Tags, pills | `mat-chip-set` / `mat-chip-listbox` / `mat-chip-grid` |
-| Contador sobre un ícono | `matBadge` |
-| Sidebar, drawer, offcanvas | `mat-sidenav` / `mat-drawer` |
-| Navbar, header | `mat-toolbar` como base |
-| `ngx-bootstrap`, `@ng-bootstrap/ng-bootstrap`, `primeng`, `ng-zorro-antd` | El componente Material equivalente de cada módulo que se use. Dos kits de UI en la misma app rompen la consistencia. |
-
-### Sin equivalente en Angular Material (mantener)
-
-- Avatar.
-- Breadcrumb.
-- Skeleton.
-- Carrusel.
-- Rating.
-- Subida de archivos o dropzone.
-- Aviso fijo en la página (banner o alerta inline).
-- Data grid con edición inline, agrupación o virtualización pesada (por ejemplo, ag-grid).
-
-Si construyes uno de estos, úsalo sobre CDK (`Overlay`, `A11y`, `ListKeyManager`) y con tokens del tema, para que se vea y se comporte como Material.
-
-### Configuración global en vez de wrappers
-
-Si un wrapper solo existe para fijar defaults o estilos, reemplázalo por configuración global:
-
-| Necesidad | Configuración global |
-|---|---|
-| Appearance de todos los campos (`fill` / `outline`), subscriptSizing | provider `MAT_FORM_FIELD_DEFAULT_OPTIONS` |
-| Ancho, `autoFocus` y `hasBackdrop` de todos los diálogos | provider `MAT_DIALOG_DEFAULT_OPTIONS` |
-| Duración y posición de todos los snackbars | provider `MAT_SNACK_BAR_DEFAULT_OPTIONS` |
-| Delays y posición de los tooltips | provider `MAT_TOOLTIP_DEFAULT_OPTIONS` |
-| Comportamiento por defecto de los botones (p. ej. `disabledInteractive`) | provider `MAT_BUTTON_CONFIG` |
-| Colores, formas y tipografía de un componente | mixin Sass `mat.<componente>-overrides((...))` (ver la pestaña Styling de cada componente) |
-| Paleta, tipografía y densidad de toda la app | mixin `mat.theme((...))` y `mat.theme-overrides` |

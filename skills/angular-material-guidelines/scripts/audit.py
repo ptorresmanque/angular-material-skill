@@ -36,6 +36,34 @@ CHIP_PARENTS = {'mat-chip': {'mat-chip-set', 'mat-chip-listbox', 'mat-chip-grid'
 FIELD_CONTROLS = {'mat-select', 'mat-chip-grid', 'mat-date-range-input'}
 # Cada uno es una sección propia: puede tener su propia acción filled (diálogo, paso, tab, panel, card).
 SECTIONS = {'ng-template', 'mat-step', 'mat-tab', 'mat-expansion-panel', 'mat-card'}
+# Elementos/atributos que la sección Accessibility de material.angular.dev exige rotular con aria-label/-labelledby.
+# ERROR = "must/always" en la documentación; WARN = "should".
+NEEDS_LABEL = {
+    'mat-progress-bar': ('ERROR', 'progress-sin-label'), 'mat-progress-spinner': ('ERROR', 'progress-sin-label'),
+    'mat-spinner': ('ERROR', 'progress-sin-label'), 'mat-paginator': ('ERROR', 'paginator-sin-label'),
+    'mat-nav-list': ('ERROR', 'lista-sin-label'), 'mat-selection-list': ('ERROR', 'lista-sin-label'),
+    'mat-chip-listbox': ('ERROR', 'chips-sin-label'), 'mat-chip-grid': ('ERROR', 'chips-sin-label'),
+    'mat-table': ('ERROR', 'tabla-sin-label'), 'mat-tab-nav-bar': ('ERROR', 'tab-nav-sin-label'),
+    'mat-radio-group': ('WARN', 'grupo-sin-label'), 'mat-button-toggle-group': ('WARN', 'grupo-sin-label'),
+    'mat-stepper': ('WARN', 'stepper-sin-label'), 'mat-horizontal-stepper': ('WARN', 'stepper-sin-label'),
+    'mat-vertical-stepper': ('WARN', 'stepper-sin-label'), 'matsliderthumb': ('WARN', 'slider-sin-label'),
+    'matsliderstartthumb': ('WARN', 'slider-sin-label'), 'matsliderendthumb': ('WARN', 'slider-sin-label'),
+}
+LABEL_WHY = {
+    'progress-sin-label': 'el lector de pantalla anuncia un progreso sin saber de qué',
+    'paginator-sin-label': 'debe decir qué contenido pagina ("Paginación de pedidos")',
+    'lista-sin-label': 'nombra la navegación o la selección', 'chips-sin-label': 'nombra el conjunto ("Filtrar por talla")',
+    'tabla-sin-label': 'nombra la tabla ("Pedidos del mes")', 'tab-nav-sin-label': 'el <nav> de tabs necesita nombre',
+    'grupo-sin-label': 'nombra la pregunta del grupo', 'stepper-sin-label': 'nombra el proceso y cada paso',
+    'slider-sin-label': 'nombra cada thumb (en rangos: mínimo y máximo)',
+}
+# No deben contener controles interactivos (autocomplete/select/list/chips/expansion/checkbox/radio/slide-toggle docs).
+NO_NEST = {'mat-option', 'mat-list-option', 'mat-chip-option', 'mat-expansion-panel-header',
+           'mat-checkbox', 'mat-radio-button', 'mat-slide-toggle'}
+INTERACTIVE = {'button', 'input', 'select', 'textarea', 'mat-checkbox', 'mat-slide-toggle', 'mat-radio-button', 'mat-select'}
+LISTS = {'mat-list', 'mat-nav-list', 'mat-action-list', 'mat-selection-list'}
+CLICK_NOT_FOCUSABLE = {'mat-card', 'mat-chip', 'mat-grid-tile'}
+PICKERS = {'mat-datepicker', 'mat-date-range-picker'}
 
 
 class Auditor(HTMLParser):
@@ -43,6 +71,7 @@ class Auditor(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.major, self.off = major, line_offset
         self.stack, self.findings, self.filled, self.fabs = [], [], {}, []
+        self.pickers, self.picker_toggles = [], set()
 
     def add(self, sev, rule, msg, spans):
         self.findings.append({'line': spans[0][0], 'sev': sev, 'rule': rule, 'msg': msg, 'spans': spans})
@@ -71,6 +100,7 @@ class Auditor(HTMLParser):
             self.add('WARN', 'tooltip-no-enfocable',
                      f'matTooltip en <{tag}> no enfocable: teclado y táctil no lo verán. Úsalo en un elemento interactivo '
                      'o agrega tabindex="0", y no pongas ahí información esencial.', [sp])
+        self._component_rules(tag, a, sp, anc)
         if tag in ('button', 'a'):
             d = self._nearest('dlg')
             if d:
@@ -97,7 +127,82 @@ class Auditor(HTMLParser):
             e.update(opts=0, skip=bool(a.keys() & {'multiple', '[multiple]'}))
         if tag == 'form':
             e.update(toggles=[], submit=bool(a.keys() & {'(ngsubmit)', '(submit)'}))
+        if tag == 'mat-form-field':
+            e.update(ff_label=False, ff_ctrl=False, ff_ctrl_labeled=False, ff_dp=False,
+                     ff_hint=bool(a.keys() & {'hintlabel', '[hintlabel]'}))
+        if tag == 'mat-list-item' or tag == 'mat-list-option' or 'mat-list-item' in a:
+            e.update(li_line=False, li_title=False)
+        if tag in PICKERS:
+            e['dp_actions'] = False
+        if tag in NO_NEST or tag in INTERACTIVE or (tag == 'a' and a.keys() & LINK):
+            e['host'] = tag
         self.stack.append(e)
+
+    def _component_rules(self, tag, a, sp, anc):
+        keys = a.keys()
+        for key in [tag, *a]:
+            if key in NEEDS_LABEL and not keys & LABEL:
+                sev, rule = NEEDS_LABEL[key]
+                self.add(sev, rule, f'<{tag}> ({key}) sin aria-label/aria-labelledby: {LABEL_WHY[rule]}.', [sp])
+                break
+        if keys & {'matbadge', '[matbadge]'} and not keys & {'matbadgedescription', '[matbadgedescription]'}:
+            self.add('ERROR', 'badge-sin-descripcion',
+                     'matBadge sin matBadgeDescription: el conteo no llega al lector de pantalla.', [sp])
+        if (tag == 'mat-sort-header' or 'mat-sort-header' in a) and not keys & {'sortactiondescription', '[sortactiondescription]'}:
+            self.add('ERROR', 'sort-sin-descripcion',
+                     'mat-sort-header sin sortActionDescription ("Ordenar por …"): el encabezado no dice que ordena.', [sp])
+        if 'matchipremove' in a and tag != 'button':
+            self.add('ERROR', 'chip-remove-en-icono', f'matChipRemove en <{tag}>: aplícalo siempre a un <button>.', [sp])
+        if tag == 'mat-icon' and '(click)' in a:
+            self.add('ERROR', 'icono-clicable',
+                     'mat-icon con (click): un ícono no es interactivo ni enfocable. Usa <button matIconButton aria-label="…">.', [sp])
+        if tag in CLICK_NOT_FOCUSABLE and '(click)' in a and not keys & TABINDEX:
+            self.add('WARN', 'click-sin-teclado',
+                     f'(click) en <{tag}> no enfocable: el teclado no puede activarlo. Pon un <a>/<button> dentro '
+                     '(o tabindex + rol + manejo de teclado).', [sp])
+        if keys & {'matmenutriggerfor', '[matmenutriggerfor]'} and tag not in ('button', 'a'):
+            self.add('WARN', 'menu-trigger-no-boton',
+                     f'matMenuTriggerFor en <{tag}>: el disparador debe ser un <button>. Para clic derecho usa matContextMenuTriggerFor.', [sp])
+        if tag == 'mat-tree' and '[treecontrol]' in a:
+            self.add('WARN', 'tree-control-legacy',
+                     'mat-tree con treeControl: usa childrenAccessor/levelAccessor (treeControl no aplica la accesibilidad del árbol).', [sp])
+        lst = next((e['tag'] for e in reversed(self.stack) if e['tag'] in LISTS), None)
+        if tag == 'mat-list-item' and lst == 'mat-list' and keys & {'(click)', 'routerlink', '[routerlink]'}:
+            self.add('WARN', 'lista-interactiva',
+                     'mat-list-item interactivo dentro de mat-list: usa mat-nav-list con <a mat-list-item> o '
+                     'mat-action-list con <button mat-list-item>.', [sp])
+        if (tag in INTERACTIVE or (tag == 'a' and keys & LINK)) and not keys & {'matchipremove', 'matchiptrailingicon'}:
+            host = next((e['host'] for e in reversed(self.stack) if 'host' in e), None)
+            if host:
+                self.add('WARN', 'control-anidado',
+                         f'<{tag}> interactivo dentro de <{host}>: los controles anidados confunden a la tecnología asistiva.', [sp])
+            elif 'mat-menu' in anc and 'mat-menu-item' not in a:
+                self.add('WARN', 'control-anidado',
+                         f'<{tag}> dentro de mat-menu sin mat-menu-item: un menú solo debe contener mat-menu-item.', [sp])
+        ff = self._nearest('ff_label')
+        if ff:
+            if tag == 'mat-label':
+                ff['ff_label'] = True
+            if tag == 'mat-hint':
+                ff['ff_hint'] = True
+            if keys & {'matinput', 'matnativecontrol'} or tag in FIELD_CONTROLS:
+                ff['ff_ctrl'] = True
+                ff['ff_ctrl_labeled'] |= bool(keys & LABEL)
+            if '[matdatepicker]' in a or tag == 'mat-date-range-input':
+                ff['ff_dp'] = True
+        li = self._nearest('li_line')
+        if li:
+            li['li_line'] |= 'matlistitemline' in a
+            li['li_title'] |= 'matlistitemtitle' in a
+        if tag in ('mat-datepicker-actions', 'mat-date-range-picker-actions'):
+            dp = self._nearest('dp_actions')
+            if dp:
+                dp['dp_actions'] = True
+        if tag in PICKERS:
+            ref = next((k[1:] for k in a if k.startswith('#')), None)
+            self.pickers.append((ref, sp))
+        if tag == 'mat-datepicker-toggle':
+            self.picker_toggles.add((a.get('[for]') or a.get('for') or '').strip().lower())
 
     def _button(self, tag, a, sp, legacy, new):
         if self.major is not None and self.major < 20 and new:
@@ -148,6 +253,19 @@ class Auditor(HTMLParser):
             self.add('WARN', 'slide-toggle-en-form-con-submit',
                      'mat-slide-toggle en un form que se envía: el switch implica efecto inmediato; '
                      'si se guarda al enviar usa mat-checkbox.', e['toggles'])
+        if e.get('ff_ctrl') and not e['ff_label'] and not e['ff_ctrl_labeled']:
+            self.add('ERROR', 'campo-sin-label',
+                     'mat-form-field sin <mat-label> ni aria-label en el control: el placeholder no es un label.', [e['span']])
+        if e.get('ff_dp') and not e['ff_hint']:
+            self.add('WARN', 'datepicker-sin-formato',
+                     'Campo de fecha sin <mat-hint> con el formato (p. ej. DD-MM-AAAA): comunícalo siempre.', [e['span']])
+        if e.get('li_line') and not e['li_title']:
+            self.add('ERROR', 'lista-multilinea-sin-titulo',
+                     'Ítem de lista con matListItemLine pero sin matListItemTitle: es obligatorio en ítems multilínea.', [e['span']])
+        if e.get('dp_actions') is False:
+            self.add('ERROR', 'datepicker-sin-confirmacion',
+                     f'<{e["tag"]}> sin mat-datepicker-actions (Cancelar/Aplicar): la documentación pide habilitar '
+                     'siempre la confirmación para usuarios de tecnología asistiva.', [e['span']])
 
     def finish(self):
         for e in reversed(self.stack):
@@ -161,6 +279,11 @@ class Auditor(HTMLParser):
         if len(self.fabs) > 1:
             self.add('WARN', 'multiples-fab',
                      f'{len(self.fabs)} FAB (líneas {", ".join(str(s[0]) for s in self.fabs)}): un FAB por pantalla.', self.fabs)
+        for ref, sp in self.pickers:
+            if ref and ref not in self.picker_toggles:
+                self.add('ERROR', 'datepicker-sin-toggle',
+                         f'Datepicker #{ref} sin <mat-datepicker-toggle [for]="{ref}">: es la única forma de abrirlo '
+                         'para lectores de pantalla en móvil.', [sp])
 
 
 def ignored(lines, f):
@@ -468,7 +591,39 @@ def selftest():
     assert got == Counter({'icon-button-sin-label': 1, 'button-navega': 1, 'a-sin-destino': 1, 'control-sin-form-field': 1,
                            'chip-sin-contenedor': 1, 'select-pocas-opciones': 1, 'slide-toggle-en-form-con-submit': 1,
                            'dialog-mas-de-2-acciones': 1, 'tooltip-no-enfocable': 1, 'boton-legacy': 1,
-                           'multiples-filled': 1}), got
+                           'multiples-filled': 1, 'campo-sin-label': 2}), got
+    tpl2 = '''
+<mat-progress-bar mode="indeterminate"></mat-progress-bar>
+<mat-progress-spinner aria-label="Cargando" mode="indeterminate"></mat-progress-spinner>
+<mat-paginator [length]="10"></mat-paginator>
+<mat-nav-list><a mat-list-item href="/a"><span matListItemLine>x</span><button>y</button></a></mat-nav-list>
+<mat-chip-listbox><mat-chip-option>A<button matChipRemove>x</button></mat-chip-option></mat-chip-listbox>
+<mat-chip-set><mat-chip (click)="f()">B</mat-chip><mat-icon matChipRemove>cancel</mat-icon></mat-chip-set>
+<table mat-table [dataSource]="d"><tr><th mat-sort-header>Fecha</th></tr></table>
+<nav mat-tab-nav-bar [tabPanel]="p"></nav>
+<mat-radio-group><mat-radio-button value="1">Uno <a href="/t">términos</a></mat-radio-button></mat-radio-group>
+<mat-stepper></mat-stepper>
+<mat-slider><input matSliderThumb></mat-slider>
+<button matIconButton aria-label="Avisos" matBadge="3"><mat-icon>n</mat-icon></button>
+<mat-icon (click)="borrar()">delete</mat-icon>
+<mat-card (click)="abrir()">C</mat-card>
+<span [matMenuTriggerFor]="m">⋮</span>
+<mat-menu #m><button mat-menu-item>Ok</button><input type="text"></mat-menu>
+<mat-tree [dataSource]="t" [treeControl]="tc"></mat-tree>
+<mat-list><mat-list-item (click)="x()">L</mat-list-item></mat-list>
+<mat-form-field><mat-label>Fecha</mat-label><input matInput [matDatepicker]="pk"><mat-datepicker #pk /></mat-form-field>
+<mat-form-field><mat-label>Fecha 2</mat-label><input matInput [matDatepicker]="ok"><mat-hint>DD-MM-AAAA</mat-hint>
+  <mat-datepicker-toggle [for]="ok" /><mat-datepicker #ok><mat-datepicker-actions>
+  <button matButton matDatepickerApply>Aplicar</button></mat-datepicker-actions></mat-datepicker></mat-form-field>
+'''
+    got2 = Counter(f['rule'] for f in audit_source(Path('t2.html'), tpl2, 21))
+    assert got2 == Counter({
+        'progress-sin-label': 1, 'paginator-sin-label': 1, 'lista-sin-label': 1, 'lista-multilinea-sin-titulo': 1,
+        'control-anidado': 3, 'chips-sin-label': 1, 'click-sin-teclado': 2, 'chip-remove-en-icono': 1,
+        'tabla-sin-label': 1, 'sort-sin-descripcion': 1, 'tab-nav-sin-label': 1, 'grupo-sin-label': 1,
+        'stepper-sin-label': 1, 'slider-sin-label': 1, 'badge-sin-descripcion': 1, 'icono-clicable': 1,
+        'menu-trigger-no-boton': 1, 'tree-control-legacy': 1, 'lista-interactiva': 1, 'datepicker-sin-formato': 1,
+        'datepicker-sin-toggle': 1, 'datepicker-sin-confirmacion': 1}), got2
     old = Counter(f['rule'] for f in audit_source(Path('t.html'), tpl, 19))
     assert old['api-boton-no-disponible'] == 9 and not old['boton-legacy'], old
     ts = 'import x;\n@Component({\n  template: `\n    <button matIconButton></button>`\n})'

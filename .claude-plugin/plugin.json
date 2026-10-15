@@ -1,6 +1,6 @@
 {
   "name": "angular-material-skill",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Lineamientos de uso de componentes Angular Material (Material Design 3) para Claude Code: skill + auditor de templates + hook que revisa cada edición.",
   "author": {
     "name": "Patricio Manquepillan",
